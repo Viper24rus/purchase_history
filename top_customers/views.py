@@ -33,13 +33,14 @@ class CustomerList(APIView):
 
     parser_classes = (FileUploadParser, )
 
-    def post(self, request, filename, format='txt'):
+    def post(self, request, format='csv'):
         flag = False
-
         if 'file' not in request.data:
             return Response('Status: Error, Desc: Empty content', status=400)
 
         file = request.data['file'].open()
+        for string in file:
+            current_str = [str(b) for b in string.decode().split(',')]
         Customer.objects.all().delete()
 
         for string in file:
