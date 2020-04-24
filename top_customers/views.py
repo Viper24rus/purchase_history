@@ -6,6 +6,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
 
+import pdb
+
 
 class CustomerList(APIView):
 
@@ -33,15 +35,16 @@ class CustomerList(APIView):
 
     parser_classes = (FileUploadParser, )
 
-    def post(self, request, format='csv'):
+    def post(self, request, filename, format=None):
         flag = False
+        customer_dict = dict()
+
         if 'file' not in request.data:
             return Response('Status: Error, Desc: Empty content', status=400)
 
         file = request.data['file'].open()
-        for string in file:
-            current_str = [str(b) for b in string.decode().split(',')]
-        Customer.objects.all().delete()
+        
+        Customer.objects.all().delete()        
 
         for string in file:
             current_str = [str(b) for b in string.decode().split(',')]
@@ -51,16 +54,22 @@ class CustomerList(APIView):
                     flag = False
                 else:
                     flag = True
+            
+            if flag and current_str != ['\r\n'] and current_str[2].isdigit():
+                if not current_str[0] in customer_dict:
+                    customer_dict[current_str[0]] = [set(), int(current_str[2])]
+                    customer_dict[current_str[0]][0].add(current_str[1])
+                else:
+                    customer_dict[current_str[0]][0].add(current_str[1])
+                    customer_dict[current_str[0]][1] += int(current_str[2])
 
-            if flag and current_str != ['\r\n']:
-                try:
-                    current_customer = Customer.objects.get(username=current_str[0])
-                except Customer.DoesNotExist:
-                    current_customer = Customer()
-                    current_customer.username = current_str[0]
-                    current_customer.save()
-                current_customer.add_item(current_str[1])
-                current_customer.spent_money += int(current_str[2])
-                current_customer.save()
-
+        for key, value in customer_dict.items():
+            
+            current_customer = Customer()
+            current_customer.username = key
+            current_customer.save()
+            current_customer.gems = (','.join(str(s) for s in customer_dict[key][0]))
+            current_customer.spent_money = customer_dict[key][1]
+            current_customer.save()
+            
         return Response("Status: OK", status=200)
