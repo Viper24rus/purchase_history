@@ -1,75 +1,65 @@
-from .models import Customer
-from .serializers import CustomerSerializer
-from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
-
-import pdb
+from .models import Customer, Gem
+from .serializers import CustomerSerializer
 
 
 class CustomerList(APIView):
-
-    def get(self, request):
-        list = Customer.objects.all().order_by('-spent_money')[:5]
-        for cur in list:
-            '''
-            поиск товаров из списка покупок каждого покупателя,
-            которые купил еще хотя бы один покупатель из списка
-            '''
-            proc_list = ''
-            for item in cur.gems.split(','):
-                for temp in list:
-                    if cur == temp:
-                        continue
-                    else:
-                        if temp.gems.find(item) != -1:
-                            if proc_list == '':
-                                proc_list = item
-                            else:
-                                proc_list = proc_list + ',' + item
-            cur.gems = proc_list
-        serializer = CustomerSerializer(list, many=True)
-        return Response({'response': serializer.data})
-
     parser_classes = (FileUploadParser, )
 
+    def get(self, request):
+        top_customers_list = Customer.objects.all().order_by('-spent_money')[:5]
+
+        serializer = CustomerSerializer(top_customers_list, many=True)
+
+        top_gems_list = []
+
+        for cur_gems in serializer.data:
+            top_gems_list.extend(cur_gems['gems'])
+
+        for cur_gems in serializer.data:
+            cur_gems['gems'] = [x for x in cur_gems['gems']
+                                if top_gems_list.count(x) > 1]
+
+        return Response({'response': serializer.data})
+
     def post(self, request, filename, format=None):
-        flag = False
         customer_dict = dict()
 
         if 'file' not in request.data:
             return Response('Status: Error, Desc: Empty content', status=400)
 
-        file = request.data['file'].open()
-        
-        Customer.objects.all().delete()        
+        uploaded_file = request.data['file'].open()
 
-        for string in file:
-            current_str = [str(b) for b in string.decode().split(',')]
+        Customer.objects.all().delete()
+        Gem.objects.all().delete()
 
-            if current_str == ['\r\n']:
-                if flag:
-                    flag = False
+        for row in uploaded_file:
+            current_row = [str(b) for b in row.decode().split(',')]
+            try:
+                validate = Customer(username=current_row[0],
+                                    spent_money=current_row[2])
+                validate.full_clean()
+
+                if current_row[0] in customer_dict:
+                    customer_dict[current_row[0]][0].add(current_row[1])
+                    customer_dict[current_row[0]][1] += int(current_row[2])
                 else:
-                    flag = True
-            
-            if flag and current_str != ['\r\n'] and current_str[2].isdigit():
-                if not current_str[0] in customer_dict:
-                    customer_dict[current_str[0]] = [set(), int(current_str[2])]
-                    customer_dict[current_str[0]][0].add(current_str[1])
-                else:
-                    customer_dict[current_str[0]][0].add(current_str[1])
-                    customer_dict[current_str[0]][1] += int(current_str[2])
+                    customer_dict[current_row[0]] = [set(),
+                                                     int(current_row[2])]
+                    customer_dict[current_row[0]][0].add(current_row[1])
+                Gem.objects.create(name=current_row[1])
+
+            except:
+                continue
 
         for key, value in customer_dict.items():
-            
             current_customer = Customer()
             current_customer.username = key
-            current_customer.save()
-            current_customer.gems = (','.join(str(s) for s in customer_dict[key][0]))
             current_customer.spent_money = customer_dict[key][1]
             current_customer.save()
-            
+            current_customer.gems.set(customer_dict[key][0])
+
         return Response("Status: OK", status=200)
