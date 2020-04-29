@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import FileUploadParser
+
 from .models import Customer, Gem
 from .serializers import CustomerSerializer
 
@@ -11,9 +12,7 @@ class CustomerList(APIView):
 
     def get(self, request):
         top_customers_list = Customer.objects.all().order_by('-spent_money')[:5]
-
         serializer = CustomerSerializer(top_customers_list, many=True)
-
         top_gems_list = []
 
         for cur_gems in serializer.data:
@@ -26,7 +25,6 @@ class CustomerList(APIView):
         return Response({'response': serializer.data})
 
     def post(self, request, filename, format=None):
-        customer_dict = dict()
 
         if 'file' not in request.data:
             return Response('Status: Error, Desc: Empty content', status=400)
@@ -35,6 +33,8 @@ class CustomerList(APIView):
 
         Customer.objects.all().delete()
         Gem.objects.all().delete()
+
+        customer_dict = dict()
 
         for row in uploaded_file:
             current_row = [str(b) for b in row.decode().split(',')]
