@@ -1,3 +1,4 @@
+from django.core.cache import cache, InvalidCacheBackendError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -11,18 +12,24 @@ class CustomerList(APIView):
     parser_classes = (FileUploadParser, )
 
     def get(self, request):
-        top_customers_list = Customer.objects.all().order_by('-spent_money')[:5]
-        serializer = CustomerSerializer(top_customers_list, many=True)
-        top_gems_list = []
 
-        for cur_gems in serializer.data:
-            top_gems_list.extend(cur_gems['gems'])
+        top_customers_cache = cache.get('top_customers')
+        if top_customers_cache is not None:
+            return Response({'response': top_customers_cache})
+        else:
+            top_customers_list = Customer.objects.all().order_by('-spent_money')[:5]
+            serializer = CustomerSerializer(top_customers_list, many=True)
+            top_gems_list = []
 
-        for cur_gems in serializer.data:
-            cur_gems['gems'] = [x for x in cur_gems['gems']
-                                if top_gems_list.count(x) > 1]
+            for cur_gems in serializer.data:
+                top_gems_list.extend(cur_gems['gems'])
 
-        return Response({'response': serializer.data})
+            for cur_gems in serializer.data:
+                cur_gems['gems'] = [x for x in cur_gems['gems']
+                                    if top_gems_list.count(x) > 1]
+
+            cache.set('top_customers', serializer.data)
+            return Response({'response': serializer.data})
 
     def post(self, request, filename, format=None):
 
@@ -33,6 +40,7 @@ class CustomerList(APIView):
 
         Customer.objects.all().delete()
         Gem.objects.all().delete()
+        cache.delete('top_customers')
 
         customer_dict = dict()
 
@@ -58,8 +66,8 @@ class CustomerList(APIView):
         for key, value in customer_dict.items():
             current_customer = Customer()
             current_customer.username = key
-            current_customer.spent_money = customer_dict[key][1]
+            current_customer.spent_money = value[1]
             current_customer.save()
-            current_customer.gems.set(customer_dict[key][0])
+            current_customer.gems.set(value[0])
 
         return Response("Status: OK", status=200)
